@@ -17,9 +17,9 @@ jobs:
 
           # Keep security ON (recommended)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                             -Name "UserAuthentication" -Value 1 -Force
+                             -Name "UserAuthentication" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                             -Name "SecurityLayer" -Value 1 -Force
+                             -Name "SecurityLayer" -Value 0 -Force
 
           # Allow RDP in firewall
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
