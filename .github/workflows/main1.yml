@@ -1,0 +1,86 @@
+name: RDP + SSH
+
+on:
+  workflow_dispatch:
+
+jobs:
+  remote-access:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Configure RDP (Secure)
+        run: |
+          # Enable Remote Desktop
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+                             -Name "fDenyTSConnections" -Value 0 -Force
+
+          # Keep security ON (recommended)
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "UserAuthentication" -Value 1 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "SecurityLayer" -Value 1 -Force
+
+          # Allow RDP in firewall
+          netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+
+          Restart-Service -Name TermService -Force
+
+      - name: Create User
+        run: |
+          $password = "P@ssw0rd123!"   # Change if you want
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+
+          New-LocalUser -Name "remote" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "remote"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "remote"
+
+          echo "USERNAME=remote" >> $env:GITHUB_ENV
+          echo "PASSWORD=$password" >> $env:GITHUB_ENV
+
+      - name: Enable SSH
+        run: |
+          # Install OpenSSH Server
+          Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+
+          # Start SSH service
+          Start-Service sshd
+
+          # Enable auto-start
+          Set-Service -Name sshd -StartupType Automatic
+
+          # Allow SSH in firewall
+          netsh advfirewall firewall add rule name="SSH" dir=in action=allow protocol=TCP localport=22
+
+      - name: Install Tailscale
+        run: |
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+          $file = "$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest -Uri $url -OutFile $file
+          Start-Process msiexec.exe -ArgumentList "/i `"$file`" /quiet /norestart" -Wait
+          Remove-Item $file
+
+      - name: Connect Tailscale
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner
+
+          Start-Sleep -Seconds 10
+          $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+
+          echo "TS_IP=$ip" >> $env:GITHUB_ENV
+
+      - name: Show Access Info
+        run: |
+          Write-Host "========== ACCESS =========="
+          Write-Host "IP: $env:TS_IP"
+          Write-Host "Username: $env:USERNAME"
+          Write-Host "Password: $env:PASSWORD"
+          Write-Host "============================"
+
+      - name: Keep Alive
+        run: |
+          while ($true) {
+            Write-Host "Running..."
+            Start-Sleep -Seconds 300
+          }
